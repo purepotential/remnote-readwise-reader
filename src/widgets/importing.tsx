@@ -21,7 +21,7 @@ function Done() {
       <button
         className="p-2 rounded-md bg-blue-40 text-white"
         onClick={async () => {
-          const rem = await plugin.rem.findByName(['Readwise Books'], null);
+          const rem = await plugin.rem.findByName(['Readwise Reader'], null);
           rem?.openRemAsPage();
           await close();
         }}

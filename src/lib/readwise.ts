@@ -1,56 +1,122 @@
 import { Either } from './types/either';
-import { ReadwiseBook } from './types/readwise';
+import { GroupedDocument, ReaderDocument, ReaderListResponse } from './types/readwise';
 
 type ExportError = 'auth' | string;
 
-export const getReadwiseExportsSince = async (
+const READER_LIST_URL = 'https://readwise.io/api/v3/list/';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Fetch a single page of the Reader list endpoint, transparently retrying on
+ * 429 rate-limit responses using the Retry-After header.
+ */
+const fetchListPage = async (
+  apiKey: string,
+  params: URLSearchParams
+): Promise<Either<ExportError, ReaderListResponse>> => {
+  while (true) {
+    console.log('Making Reader list API request with params ' + params.toString());
+    const response = await fetch(`${READER_LIST_URL}?${params.toString()}`, {
+      method: 'GET',
+      headers: { Authorization: `Token ${apiKey}` },
+    });
+    if (response.ok) {
+      return { success: true, data: await response.json() };
+    }
+    if (response.status === 401) {
+      return { success: false, error: 'auth' };
+    }
+    if (response.status === 429) {
+      const retryAfter = Number.parseInt(response.headers.get('Retry-After') || '1', 10);
+      console.log(`Hit rate limit, retrying after ${retryAfter}s...`);
+      await sleep((Number.isFinite(retryAfter) ? retryAfter : 1) * 1000);
+      continue;
+    }
+    return { success: false, error: response.statusText };
+  }
+};
+
+const fetchAllDocuments = async (
   apiKey: string,
   updatedAfter?: string
-): Promise<Either<ExportError, ReadwiseBook[]>> => {
-  let fullData: ReadwiseBook[] = [];
+): Promise<Either<ExportError, ReaderDocument[]>> => {
+  const all: ReaderDocument[] = [];
   let nextPageCursor: string | null = null;
+  do {
+    const params = new URLSearchParams();
+    if (nextPageCursor) params.append('pageCursor', nextPageCursor);
+    if (updatedAfter) params.append('updatedAfter', updatedAfter);
+    const page = await fetchListPage(apiKey, params);
+    if (!page.success) return page;
+    all.push(...page.data.results);
+    nextPageCursor = page.data.nextPageCursor ?? null;
+  } while (nextPageCursor);
+  return { success: true, data: all };
+};
 
-  while (true) {
-    const queryParams = new URLSearchParams();
-    if (nextPageCursor) {
-      queryParams.append('pageCursor', nextPageCursor);
+const fetchDocumentById = async (
+  apiKey: string,
+  id: string
+): Promise<ReaderDocument | undefined> => {
+  const params = new URLSearchParams({ id });
+  const page = await fetchListPage(apiKey, params);
+  if (page.success) return page.data.results[0];
+  return undefined;
+};
+
+/**
+ * Fetch Reader documents updated since `updatedAfter` (or everything on the
+ * first sync), then reconstruct the document -> highlights hierarchy from the
+ * flat list the API returns.
+ *
+ * Scope: only documents that have at least one highlight are returned.
+ */
+export const getReaderDocumentsSince = async (
+  apiKey: string,
+  updatedAfter?: string
+): Promise<Either<ExportError, GroupedDocument[]>> => {
+  const result = await fetchAllDocuments(apiKey, updatedAfter);
+  if (!result.success) return result;
+  const documents = result.data;
+
+  // parent_id === null => top-level document; otherwise a highlight/note child.
+  const parentsById = new Map<string, ReaderDocument>();
+  const highlights: ReaderDocument[] = [];
+  for (const doc of documents) {
+    if (doc.parent_id == null) {
+      parentsById.set(doc.id, doc);
+    } else if (doc.category === 'highlight') {
+      highlights.push(doc);
     }
-    if (updatedAfter) {
-      queryParams.append('updatedAfter', updatedAfter.toString());
-    }
-    console.log('Making readwise export api request with params ' + queryParams.toString());
-    const response = await fetch(`https://readwise.io/api/v2/export/?${queryParams.toString()}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Token ${apiKey}`,
-      },
-    });
-    if (!response.ok) {
-      if (response.status === 401) {
-        return { success: false, error: 'auth' };
-      }
-      // check Retry-After header and retry
-      else if (response.status === 429) {
-        console.log('Hit rate limit, retrying...');
-        await new Promise((resolve) =>
-          setTimeout(resolve, Number.parseInt(response.headers.get('Retry-After')!))
-        );
-        const res = await getReadwiseExportsSince(apiKey, updatedAfter);
-        if (res.success) {
-          return { success: true, data: fullData.concat(res.data) };
-        } else {
-          return res;
-        }
-      } else {
-        return { success: false, error: response.statusText };
-      }
-    }
-    const responseJson = await response.json();
-    fullData.push(...responseJson['results']);
-    nextPageCursor = responseJson['nextPageCursor'];
-    if (!nextPageCursor) {
-      break;
+    // category === 'note' children are surfaced via each highlight's `notes`.
+  }
+
+  // On incremental syncs a highlight can come back without its parent (the
+  // parent wasn't itself modified). Fetch any missing parents individually.
+  const missingParentIds = new Set<string>();
+  for (const hl of highlights) {
+    if (hl.parent_id && !parentsById.has(hl.parent_id)) {
+      missingParentIds.add(hl.parent_id);
     }
   }
-  return { success: true, data: fullData };
+  for (const id of missingParentIds) {
+    const parent = await fetchDocumentById(apiKey, id);
+    if (parent) parentsById.set(parent.id, parent);
+  }
+
+  // Group highlights under their parent, keeping only documents that have any.
+  const grouped = new Map<string, GroupedDocument>();
+  for (const hl of highlights) {
+    const parent = hl.parent_id ? parentsById.get(hl.parent_id) : undefined;
+    if (!parent) continue;
+    let entry = grouped.get(parent.id);
+    if (!entry) {
+      entry = { document: parent, highlights: [] };
+      grouped.set(parent.id, entry);
+    }
+    entry.highlights.push(hl);
+  }
+
+  return { success: true, data: [...grouped.values()] };
 };

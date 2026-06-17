@@ -1,32 +1,40 @@
 import { RNPlugin } from '@remnote/plugin-sdk';
-import { powerups, bookSlots, highlightSlots } from './consts';
+import { powerups, documentSlots, highlightSlots } from './consts';
 
-async function registerBookPowerup(plugin: RNPlugin) {
+async function registerDocumentPowerup(plugin: RNPlugin) {
   await plugin.app.registerPowerup({
-    name: 'Readwise Book',
-    code: powerups.book,
-    description: 'Represents a book from Readwise',
+    name: 'Readwise Document',
+    code: powerups.document,
+    description: 'Represents a document from Readwise Reader',
     options: {
       slots: [
         {
-          code: bookSlots.bookId,
-          name: 'Book ID',
+          code: documentSlots.documentId,
+          name: 'Document ID',
           hidden: true,
         },
         {
-          code: bookSlots.author,
+          code: documentSlots.author,
           name: 'Author',
         },
         {
-          code: bookSlots.image,
+          code: documentSlots.image,
           name: 'Image',
         },
         {
-          code: bookSlots.category,
+          code: documentSlots.category,
           name: 'Category',
         },
         {
-          code: bookSlots.tags,
+          code: documentSlots.summary,
+          name: 'Summary',
+        },
+        {
+          code: documentSlots.location,
+          name: 'Location',
+        },
+        {
+          code: documentSlots.tags,
           name: 'Tags',
         },
       ],
@@ -38,7 +46,7 @@ async function registerHighlightPowerup(plugin: RNPlugin) {
   await plugin.app.registerPowerup({
     name: 'Readwise Highlight',
     code: powerups.highlight,
-    description: 'Represents a highlight from Readwise',
+    description: 'Represents a highlight from Readwise Reader',
     options: {
       slots: [
         {
@@ -60,6 +68,6 @@ async function registerHighlightPowerup(plugin: RNPlugin) {
 }
 
 export async function registerPowerups(plugin: RNPlugin) {
-  await registerBookPowerup(plugin);
+  await registerDocumentPowerup(plugin);
   await registerHighlightPowerup(plugin);
 }

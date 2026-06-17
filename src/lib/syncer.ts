@@ -1,8 +1,8 @@
 import { RNPlugin } from '@remnote/plugin-sdk';
 import { settings, storage } from './consts';
-import { importBooksAndHighlights } from './import';
+import { importDocumentsAndHighlights } from './import';
 import { log } from './log';
-import { getReadwiseExportsSince } from './readwise';
+import { getReaderDocumentsSince } from './readwise';
 
 let syncer: Syncer | undefined = undefined;
 export const getSyncer = (plugin: RNPlugin) => {
@@ -135,37 +135,43 @@ class Syncer {
     }
     const lastSync = opts.ignoreLastSync ? undefined : await this.getLastSync();
     try {
-      this.log('Syncing Readwise highlights...', opts.runImmediately);
+      this.log('Syncing Readwise Reader highlights...', opts.runImmediately);
       this.isSyncing = true;
-      const result = await getReadwiseExportsSince(apiKey, lastSync?.toISOString());
+      const result = await getReaderDocumentsSince(apiKey, lastSync?.toISOString());
       if (result.success) {
-        const books = result.data;
-        const total = books.reduce((acc, b) => acc + b.highlights.length, 0);
-        this.log(`Found ${books.length} books with ${total} highlights.`, opts.runImmediately);
-        if (books && books.length > 0) {
+        const documents = result.data;
+        const total = documents.reduce((acc, d) => acc + d.highlights.length, 0);
+        this.log(
+          `Found ${documents.length} documents with ${total} highlights.`,
+          opts.runImmediately
+        );
+        if (documents && documents.length > 0) {
           await this.updateSyncError('');
           await this.updateSyncProgress(0);
           if (opts.showModal) {
             await this.openSyncProgressModal();
           }
-          const result = await importBooksAndHighlights(
+          const result = await importDocumentsAndHighlights(
             this.plugin,
-            books,
+            documents,
             this.updateSyncProgress.bind(this),
             !!lastSync
           );
           if (result.success) {
             this.log(
-              `Successfully imported ${result.data} books and highlights.`,
+              `Successfully imported ${result.data} documents and highlights.`,
               !!opts.notify || opts.runImmediately
             );
             await this.updateLastSync();
           } else {
-            this.log('Failed to import books and highlights: ' + result.error, true);
+            this.log('Failed to import documents and highlights: ' + result.error, true);
             await this.updateSyncError(result.error);
           }
         } else {
-          this.log('No new books or highlights to import.', !!opts.notify || opts.runImmediately);
+          this.log(
+            'No new documents or highlights to import.',
+            !!opts.notify || opts.runImmediately
+          );
         }
       } else {
         if (result.error == 'auth') {
@@ -174,7 +180,7 @@ class Syncer {
             true
           );
         } else {
-          this.log('Failed to sync Readwise highlights: ' + result.error, true);
+          this.log('Failed to sync Readwise Reader highlights: ' + result.error, true);
         }
       }
     } catch (e) {

@@ -3,15 +3,17 @@ export const settings = {
 };
 
 export const powerups = {
-  book: 'readwise-book',
+  document: 'readwise-document',
   highlight: 'readwise-highlight',
 };
 
-export const bookSlots = {
-  bookId: 'readwise-book-id',
+export const documentSlots = {
+  documentId: 'readwise-document-id',
   author: 'readwise-author',
   image: 'readwise-image',
   category: 'readwise-category',
+  summary: 'readwise-summary',
+  location: 'readwise-location',
   tags: 'readwise-tags',
 };
 

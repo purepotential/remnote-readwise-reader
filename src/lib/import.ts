@@ -1,24 +1,32 @@
 import { BuiltInPowerupCodes, Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
-import { bookSlots, highlightSlots, powerups } from './consts';
+import { documentSlots, highlightSlots, powerups } from './consts';
 import { log } from './log';
 import { Either } from './types/either';
-import { Highlight, ReadwiseBook } from './types/readwise';
+import { GroupedDocument, ReaderDocument } from './types/readwise';
 import { addLinkAsSource } from './utils';
 
-const findBookParentRem = async (plugin: RNPlugin) => {
-  return await plugin.rem.findByName(['Readwise Books'], null);
+const DOCUMENTS_PARENT_NAME = 'Readwise Reader';
+
+/** Deep link back into the Reader app for a given document/highlight id. */
+const readerLink = (id: string) => `https://read.readwise.io/read/${id}`;
+
+const tagNames = (tags: ReaderDocument['tags']): string[] =>
+  tags ? Object.values(tags).map((t) => t.name) : [];
+
+const findDocumentsParentRem = async (plugin: RNPlugin) => {
+  return await plugin.rem.findByName([DOCUMENTS_PARENT_NAME], null);
 };
 
-const createBookParentRem = async (plugin: RNPlugin) => {
+const createDocumentsParentRem = async (plugin: RNPlugin) => {
   const r = await plugin.rem.createRem();
-  await r?.setText(['Readwise Books']);
+  await r?.setText([DOCUMENTS_PARENT_NAME]);
   await r?.setIsDocument(true);
   await r?.setPowerupProperty(BuiltInPowerupCodes.Document, 'Status', ['Pinned']);
   return r;
 };
 
-const findOrCreateHighlightsParentRem = async (plugin: RNPlugin, bookRem: Rem) => {
-  let highlightsRem = await plugin.rem.findByName(['Highlights'], bookRem!._id);
+const findOrCreateHighlightsParentRem = async (plugin: RNPlugin, documentRem: Rem) => {
+  let highlightsRem = await plugin.rem.findByName(['Highlights'], documentRem!._id);
   if (!highlightsRem) {
     highlightsRem = await plugin.rem.createRem();
     await highlightsRem?.setText(['Highlights']);
@@ -35,70 +43,69 @@ const findOrCreateTopLevelRem = async (plugin: RNPlugin, str: string) => {
   return rem;
 };
 
-const findOrCreateBookRem = async (
+const findOrCreateDocumentRem = async (
   plugin: RNPlugin,
-  book: ReadwiseBook,
-  bookParentRem: Rem,
-  allBooksByBookId: Record<string, Rem>
+  document: ReaderDocument,
+  documentsParentRem: Rem,
+  allDocumentsById: Record<string, Rem>
 ): Promise<Either<string, string>> => {
   return await plugin.app.transaction<() => Promise<Either<string, string>>>(async () => {
-    let bookRem: Rem | undefined = allBooksByBookId[book.user_book_id];
-    if (!bookRem) {
-      bookRem = await plugin.rem.createRem();
+    let documentRem: Rem | undefined = allDocumentsById[document.id];
+    if (!documentRem) {
+      documentRem = await plugin.rem.createRem();
     }
-    if (!bookRem) {
-      return { success: false, error: `Failed to create the book rem for book ${book.title}` };
+    if (!documentRem) {
+      return { success: false, error: `Failed to create the document rem for ${document.title}` };
     }
-    const highlightsRem = await findOrCreateHighlightsParentRem(plugin, bookRem);
+    const highlightsRem = await findOrCreateHighlightsParentRem(plugin, documentRem);
     if (!highlightsRem) {
       return {
         success: false,
-        error: `Failed to create the highlights parent rem inside book ${book.title}`,
+        error: `Failed to create the highlights parent rem inside document ${document.title}`,
       };
     }
-    await highlightsRem.setParent(bookRem._id);
+    await highlightsRem.setParent(documentRem._id);
     if (
-      book.title &&
+      document.title &&
       // don't overwrite if user edited
-      (await plugin.richText.empty(bookRem.text || []))
+      (await plugin.richText.empty(documentRem.text || []))
     ) {
-      bookRem.setText([book.title]);
+      documentRem.setText([document.title]);
     }
-    await bookRem.addPowerup(powerups.book);
-    await bookRem.setIsDocument(true);
+    await documentRem.addPowerup(powerups.document);
+    await documentRem.setIsDocument(true);
 
-    if (book.user_book_id != null) {
-      bookRem.setPowerupProperty(powerups.book, bookSlots.bookId, [book.user_book_id.toString()]);
-    } else {
-      return { success: false, error: `Book ${book.title} has no user_book_id` };
-    }
+    documentRem.setPowerupProperty(powerups.document, documentSlots.documentId, [document.id]);
 
-    if (book.author) {
-      bookRem.setPowerupProperty(powerups.book, bookSlots.author, [book.author]);
+    if (document.author) {
+      documentRem.setPowerupProperty(powerups.document, documentSlots.author, [document.author]);
     }
-    if (book.readwise_url) {
-      addLinkAsSource(plugin, bookRem, book.readwise_url);
-    }
-    if (book.cover_image_url) {
-      bookRem.setPowerupProperty(
-        powerups.book,
-        bookSlots.image,
-        await plugin.richText.image(book.cover_image_url).value()
+    // Link back to the Reader app rather than the legacy readwise.io reader.
+    addLinkAsSource(plugin, documentRem, readerLink(document.id));
+    if (document.image_url) {
+      documentRem.setPowerupProperty(
+        powerups.document,
+        documentSlots.image,
+        await plugin.richText.image(document.image_url).value()
       );
     }
-    if (book.category) {
-      bookRem.setPowerupProperty(powerups.book, bookSlots.category, [book.category]);
+    if (document.category) {
+      documentRem.setPowerupProperty(powerups.document, documentSlots.category, [document.category]);
     }
-    if (book.book_tags && book.book_tags.length > 0) {
-      for (const tag of book.book_tags) {
-        const tagRem = await findOrCreateTopLevelRem(plugin, tag.name);
-        if (tagRem) {
-          bookRem.addTag(tagRem);
-        }
+    if (document.summary) {
+      documentRem.setPowerupProperty(powerups.document, documentSlots.summary, [document.summary]);
+    }
+    if (document.location) {
+      documentRem.setPowerupProperty(powerups.document, documentSlots.location, [document.location]);
+    }
+    for (const tag of tagNames(document.tags)) {
+      const tagRem = await findOrCreateTopLevelRem(plugin, tag);
+      if (tagRem) {
+        documentRem.addTag(tagRem);
       }
     }
-    await bookRem.setParent(bookParentRem._id);
-    return { success: true, data: bookRem._id };
+    await documentRem.setParent(documentsParentRem._id);
+    return { success: true, data: documentRem._id };
   });
 };
 
@@ -146,72 +153,63 @@ export async function convertToRichTextArray(plugin: RNPlugin, text: string) {
 
 const findOrCreateHighlight = async (
   plugin: RNPlugin,
-  highlight: Highlight,
-  bookRem: Rem,
+  highlight: ReaderDocument,
+  documentRem: Rem,
   allHighlightsById: Record<string, Rem>
 ): Promise<Either<string, Rem>> => {
-  let highlightRem: Rem | undefined = allHighlightsById[highlight.id.toString()];
+  let highlightRem: Rem | undefined = allHighlightsById[highlight.id];
   highlightRem = highlightRem ? highlightRem : await plugin.rem.createRem();
   if (!highlightRem) {
     return {
       success: false,
-      error: 'Could not create highlight rem for book: ' + bookRem.text?.[0],
+      error: 'Could not create highlight rem for document: ' + documentRem.text?.[0],
     };
   }
-  const parent = await plugin.rem.findByName(['Highlights'], bookRem._id);
+  const parent = await plugin.rem.findByName(['Highlights'], documentRem._id);
   if (!parent) {
     return {
       success: false,
-      error: 'Could not find highlights parent for book: ' + bookRem.text?.[0],
+      error: 'Could not find highlights parent for document: ' + documentRem.text?.[0],
     };
   }
   highlightRem.setParent(parent!._id);
+  // For highlight documents the highlighted text lives in `content`.
+  const highlightText = highlight.content || highlight.title || '';
   if (
-    highlight.text &&
+    highlightText &&
     // don't overwrite if user edited
     (await plugin.richText.empty(highlightRem.text || []))
   ) {
-    highlightRem.setText(await convertToRichTextArray(plugin, highlight.text));
+    highlightRem.setText(await convertToRichTextArray(plugin, highlightText));
   }
   await highlightRem.addPowerup(powerups.highlight);
-  if (highlight.id) {
-    highlightRem.setPowerupProperty(powerups.highlight, highlightSlots.highlightId, [
-      highlight.id.toString(),
-    ]);
-  } else {
-    return { success: false, error: `Highlight for book ${bookRem.text?.[0]} has no id` };
-  }
-  if (highlight.note) {
-    highlightRem.setPowerupProperty(powerups.highlight, highlightSlots.note, [highlight.note]);
+  highlightRem.setPowerupProperty(powerups.highlight, highlightSlots.highlightId, [highlight.id]);
+  if (highlight.notes) {
+    highlightRem.setPowerupProperty(powerups.highlight, highlightSlots.note, [highlight.notes]);
   }
 
-  if (highlight.tags && highlight.tags.length > 0) {
-    // highlightRem.setPowerupProperty(powerups.highlight, highlightSlots.tags, [
-    //   highlight.tags.map((x) => x.name).join(', '),
-    // ]);
-
-    for (const tag of highlight.tags) {
-      const tagRem = await findOrCreateTopLevelRem(plugin, tag.name);
-      if (tagRem) {
-        highlightRem.addTag(tagRem);
-      }
+  for (const tag of tagNames(highlight.tags)) {
+    const tagRem = await findOrCreateTopLevelRem(plugin, tag);
+    if (tagRem) {
+      highlightRem.addTag(tagRem);
     }
   }
-  if (highlight.readwise_url) {
-    addLinkAsSource(plugin, highlightRem, highlight.readwise_url);
-  }
+  addLinkAsSource(plugin, highlightRem, readerLink(highlight.id));
   return { success: true, data: highlightRem };
 };
 
-const findAllBooks = async (plugin: RNPlugin) => {
-  const bookPowerup = await plugin.powerup.getPowerupByCode(powerups.book);
-  const allBooks = (await bookPowerup?.taggedRem()) || [];
-  const allBooksByBookId = Object.fromEntries(
+const findAllDocuments = async (plugin: RNPlugin) => {
+  const documentPowerup = await plugin.powerup.getPowerupByCode(powerups.document);
+  const allDocuments = (await documentPowerup?.taggedRem()) || [];
+  const allDocumentsById = Object.fromEntries(
     (await Promise.all(
-      allBooks.map(async (b) => [await b.getPowerupProperty(powerups.book, bookSlots.bookId), b])
+      allDocuments.map(async (d) => [
+        await d.getPowerupProperty(powerups.document, documentSlots.documentId),
+        d,
+      ])
     )) as [string, Rem][]
   );
-  return allBooksByBookId;
+  return allDocumentsById;
 };
 
 const findAllHighlights = async (plugin: RNPlugin) => {
@@ -228,44 +226,52 @@ const findAllHighlights = async (plugin: RNPlugin) => {
   return allHighlightsByHighlightId;
 };
 
-export const importBooksAndHighlights = async (
+export const importDocumentsAndHighlights = async (
   plugin: RNPlugin,
-  books: ReadwiseBook[],
+  documents: GroupedDocument[],
   updateSyncProgressModal: (percentageDone: number) => Promise<void>,
   isUpdateSync: boolean // ie, is not first sync
 ): Promise<Either<string, number>> => {
-  let readwiseBooksRem = await findBookParentRem(plugin);
-  if (!readwiseBooksRem && isUpdateSync) {
-    const err = 'Could not find or create Readwise Books Rem. Did you move or rename it?';
+  let readerParentRem = await findDocumentsParentRem(plugin);
+  if (!readerParentRem && isUpdateSync) {
+    const err = `Could not find or create the "${DOCUMENTS_PARENT_NAME}" Rem. Did you move or rename it?`;
     return { success: false, error: err };
   }
-  readwiseBooksRem = readwiseBooksRem || (await createBookParentRem(plugin));
-  if (!readwiseBooksRem) {
-    const err = 'Failed to create Readwise Books Rem.';
+  readerParentRem = readerParentRem || (await createDocumentsParentRem(plugin));
+  if (!readerParentRem) {
+    const err = `Failed to create the "${DOCUMENTS_PARENT_NAME}" Rem.`;
     return { success: false, error: err };
   }
 
-  const allBooksById = await findAllBooks(plugin);
+  const allDocumentsById = await findAllDocuments(plugin);
   const allHighlightsById = await findAllHighlights(plugin);
 
-  const total = books.reduce((acc, b) => acc + b.highlights.length, 0);
+  const total = documents.reduce((acc, d) => acc + d.highlights.length, 0);
   let count = 0;
-  for (let i = 0; i < books.length; i++) {
-    const book = books[i];
-    const bookRemResult = await findOrCreateBookRem(plugin, book, readwiseBooksRem, allBooksById);
-    if (!bookRemResult.success) {
-      return bookRemResult;
+  for (let i = 0; i < documents.length; i++) {
+    const { document, highlights } = documents[i];
+    const documentRemResult = await findOrCreateDocumentRem(
+      plugin,
+      document,
+      readerParentRem,
+      allDocumentsById
+    );
+    if (!documentRemResult.success) {
+      return documentRemResult;
     }
-    const bookRem = await plugin.rem.findOne(bookRemResult.data);
-    if (!bookRem) {
-      return { success: false, error: 'Could not findOne after create book rem for ' + book.title };
+    const documentRem = await plugin.rem.findOne(documentRemResult.data);
+    if (!documentRem) {
+      return {
+        success: false,
+        error: 'Could not findOne after create document rem for ' + document.title,
+      };
     } else {
       await Promise.all(
-        book.highlights.map(async (highlight) => {
+        highlights.map(async (highlight) => {
           const highlightResult = await findOrCreateHighlight(
             plugin,
             highlight,
-            bookRem,
+            documentRem,
             allHighlightsById
           );
           if (!highlightResult.success) {

@@ -52,14 +52,14 @@ function ImportError(props: { error: string }) {
       <p className="text-lg">🚨 Import failed!</p>
       <p className="text-red-40">Error: {props.error}</p>
       <p className="">
-        Please report the error through GitHub using the button below, or message Jamesb in the
-        RemNote Discord. Sorry for the inconvenience!
+        Please report the error through GitHub using the button below. Sorry for the
+        inconvenience!
       </p>
       <img className="rounded-md" src={errorDog} alt="dog" />
       <button
         className="p-2 rounded-md bg-blue-40 text-white"
         onClick={async () => {
-          window.open('https://github.com/bjsi/remnote-readwise/issues/new', '_blank');
+          window.open('https://github.com/purepotential/remnote-readwise/issues/new', '_blank');
         }}
       >
         🐛 Report Bug

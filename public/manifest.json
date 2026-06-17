@@ -1,11 +1,11 @@
 {
-  "author": "Jamesb",
-  "name": "Readwise Sync",
-  "description": "Sync your Readwise highlights with RemNote",
+  "author": "purepotential",
+  "name": "Readwise Reader Sync",
+  "description": "Sync your Readwise Reader highlights with RemNote",
   "enableOnMobile": true,
-  "id": "Jamesb-qb7y5il",
+  "id": "purepotential-readwise-reader",
   "manifestVersion": 1,
-  "repoUrl": "https://github.com/bjsi/remnote-readwise",
+  "repoUrl": "https://github.com/purepotential/remnote-readwise",
   "version": {
     "major": 0,
     "minor": 0,

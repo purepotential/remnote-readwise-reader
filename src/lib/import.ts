@@ -98,13 +98,47 @@ const setDocumentNote = async (plugin: RNPlugin, documentRem: Rem, noteText: str
   }
 };
 
-const findOrCreateTopLevelRem = async (plugin: RNPlugin, str: string) => {
-  let rem = await plugin.rem.findByName([str], null);
-  if (!rem) {
-    rem = await plugin.rem.createRem();
-    await rem?.setText([str]);
+/** How many documents to import concurrently. */
+const IMPORT_CONCURRENCY = 8;
+
+/** Run `fn` over `items` with at most `limit` promises in flight at once. */
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+type TagCache = Map<string, Promise<Rem | undefined>>;
+
+/**
+ * Find-or-create a top-level tag Rem. Cached for the sync run so we don't run a
+ * global findByName per tag per document, and deduped so concurrent documents
+ * sharing a tag don't create it twice.
+ */
+const getOrCreateTagRem = (plugin: RNPlugin, name: string, cache: TagCache) => {
+  let pending = cache.get(name);
+  if (!pending) {
+    pending = (async () => {
+      let rem = await plugin.rem.findByName([name], null);
+      if (!rem) {
+        rem = await plugin.rem.createRem();
+        await rem?.setText([name]);
+      }
+      return rem ?? undefined;
+    })();
+    cache.set(name, pending);
   }
-  return rem;
+  return pending;
 };
 
 const findOrCreateDocumentRem = async (
@@ -112,9 +146,11 @@ const findOrCreateDocumentRem = async (
   document: ReaderDocument,
   documentsParentRem: Rem,
   allDocumentsById: Record<string, Rem>,
-  enabledOptionalProps: OptionalProperty[]
+  enabledOptionalProps: OptionalProperty[],
+  tagCache: TagCache
 ): Promise<Either<string, string>> => {
   return await plugin.app.transaction<() => Promise<Either<string, string>>>(async () => {
+    const isExisting = !!allDocumentsById[document.id];
     let documentRem: Rem | undefined = allDocumentsById[document.id];
     if (!documentRem) {
       documentRem = await plugin.rem.createRem();
@@ -138,7 +174,10 @@ const findOrCreateDocumentRem = async (
       documentRem.setPowerupProperty(powerups.document, documentSlots.author, [document.author]);
     }
     // Link back to the Reader app rather than the legacy readwise.io reader.
-    addLinkAsSource(plugin, documentRem, readerLink(document.id));
+    // Only on first creation - the link is immutable and re-adding duplicates it.
+    if (!isExisting) {
+      addLinkAsSource(plugin, documentRem, readerLink(document.id));
+    }
     if (document.image_url) {
       documentRem.setPowerupProperty(
         powerups.document,
@@ -156,7 +195,7 @@ const findOrCreateDocumentRem = async (
       documentRem.setPowerupProperty(powerups.document, documentSlots.location, [document.location]);
     }
     for (const tag of tagNames(document.tags)) {
-      const tagRem = await findOrCreateTopLevelRem(plugin, tag);
+      const tagRem = await getOrCreateTagRem(plugin, tag, tagCache);
       if (tagRem) {
         documentRem.addTag(tagRem);
       }
@@ -218,8 +257,10 @@ const findOrCreateHighlight = async (
   plugin: RNPlugin,
   highlight: ReaderDocument,
   documentRem: Rem,
-  allHighlightsById: Record<string, Rem>
+  allHighlightsById: Record<string, Rem>,
+  tagCache: TagCache
 ): Promise<Either<string, Rem>> => {
+  const isExisting = !!allHighlightsById[highlight.id];
   let highlightRem: Rem | undefined = allHighlightsById[highlight.id];
   highlightRem = highlightRem ? highlightRem : await plugin.rem.createRem();
   if (!highlightRem) {
@@ -252,12 +293,15 @@ const findOrCreateHighlight = async (
   }
 
   for (const tag of tagNames(highlight.tags)) {
-    const tagRem = await findOrCreateTopLevelRem(plugin, tag);
+    const tagRem = await getOrCreateTagRem(plugin, tag, tagCache);
     if (tagRem) {
       highlightRem.addTag(tagRem);
     }
   }
-  addLinkAsSource(plugin, highlightRem, readerLink(highlight.id));
+  // Only on first creation - re-adding the same source link duplicates it.
+  if (!isExisting) {
+    addLinkAsSource(plugin, highlightRem, readerLink(highlight.id));
+  }
   return { success: true, data: highlightRem };
 };
 
@@ -309,47 +353,52 @@ export const importDocumentsAndHighlights = async (
   const allDocumentsById = await findAllDocuments(plugin);
   const allHighlightsById = await findAllHighlights(plugin);
   const enabledOptionalProps = await getEnabledOptionalProperties(plugin);
+  const parentRem = readerParentRem;
+  const tagCache: TagCache = new Map();
 
-  for (let i = 0; i < documents.length; i++) {
-    const { document, highlights } = documents[i];
+  let done = 0;
+  const total = documents.length;
+  await mapWithConcurrency(documents, IMPORT_CONCURRENCY, async ({ document, highlights }) => {
     const documentRemResult = await findOrCreateDocumentRem(
       plugin,
       document,
-      readerParentRem,
+      parentRem,
       allDocumentsById,
-      enabledOptionalProps
+      enabledOptionalProps,
+      tagCache
     );
     if (!documentRemResult.success) {
-      return documentRemResult;
-    }
-    const documentRem = await plugin.rem.findOne(documentRemResult.data);
-    if (!documentRem) {
-      return {
-        success: false,
-        error: 'Could not findOne after create document rem for ' + document.title,
-      };
-    }
-    if (document.notes && document.notes.trim()) {
-      await setDocumentNote(plugin, documentRem, document.notes);
-    }
-    if (highlights.length > 0) {
-      await findOrCreateHighlightsParentRem(plugin, documentRem);
-      await Promise.all(
-        highlights.map(async (highlight) => {
-          const highlightResult = await findOrCreateHighlight(
-            plugin,
-            highlight,
-            documentRem,
-            allHighlightsById
+      log(plugin, 'Error creating document: ' + documentRemResult.error, true);
+    } else {
+      const documentRem = await plugin.rem.findOne(documentRemResult.data);
+      if (!documentRem) {
+        log(plugin, 'Could not findOne after create document rem for ' + document.title, true);
+      } else {
+        if (document.notes && document.notes.trim()) {
+          await setDocumentNote(plugin, documentRem, document.notes);
+        }
+        if (highlights.length > 0) {
+          await findOrCreateHighlightsParentRem(plugin, documentRem);
+          await Promise.all(
+            highlights.map(async (highlight) => {
+              const highlightResult = await findOrCreateHighlight(
+                plugin,
+                highlight,
+                documentRem,
+                allHighlightsById,
+                tagCache
+              );
+              if (!highlightResult.success) {
+                log(plugin, 'Error creating highlight: ' + highlightResult.error, true);
+              }
+            })
           );
-          if (!highlightResult.success) {
-            log(plugin, 'Error creating highlight: ' + highlightResult.error, true);
-          }
-        })
-      );
+        }
+      }
     }
-    await updateSyncProgressModal(((i + 1) / documents.length) * 100);
-  }
+    done++;
+    await updateSyncProgressModal((done / total) * 100);
+  });
 
   return { success: true, data: documents.length };
 };

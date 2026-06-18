@@ -67,7 +67,6 @@ export const documentSlots = {
   summary: 'readwise-summary',
   location: 'readwise-location',
   tags: 'readwise-tags',
-  note: 'readwise-document-note',
 };
 
 export const highlightSlots = {

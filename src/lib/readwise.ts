@@ -141,7 +141,7 @@ export const getReaderDocumentsSince = async (
     }
   }
 
-  // Group highlights under their parent, keeping only documents that have any.
+  // Group highlights under their parent.
   const grouped = new Map<string, GroupedDocument>();
   for (const hl of highlights) {
     const parent = hl.parent_id ? parentsById.get(hl.parent_id) : undefined;
@@ -152,6 +152,13 @@ export const getReaderDocumentsSince = async (
       grouped.set(parent.id, entry);
     }
     entry.highlights.push(hl);
+  }
+
+  // Also sync documents that carry a document-level note but no highlights.
+  for (const parent of parentsById.values()) {
+    if (parent.notes && parent.notes.trim() && !grouped.has(parent.id)) {
+      grouped.set(parent.id, { document: parent, highlights: [] });
+    }
   }
 
   return { success: true, data: [...grouped.values()] };

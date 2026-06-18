@@ -37,10 +37,6 @@ async function registerDocumentPowerup(plugin: RNPlugin) {
           code: documentSlots.tags,
           name: 'Tags',
         },
-        {
-          code: documentSlots.note,
-          name: 'Note',
-        },
         ...optionalDocumentProperties.map((p) => ({ code: p.slot, name: p.name })),
       ],
     },

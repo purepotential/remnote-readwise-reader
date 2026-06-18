@@ -69,7 +69,33 @@ const findOrCreateHighlightsParentRem = async (plugin: RNPlugin, documentRem: Re
     highlightsRem = await plugin.rem.createRem();
     await highlightsRem?.setText(['Highlights']);
   }
+  // Position 1 keeps Highlights below the Note node (position 0).
+  await highlightsRem?.setParent(documentRem._id, 1);
   return highlightsRem;
+};
+
+/**
+ * Render the document-level note as a "Note" node at the document root, next to
+ * "Highlights" (the note text lives as its child).
+ */
+const setDocumentNote = async (plugin: RNPlugin, documentRem: Rem, noteText: string) => {
+  let noteRem = await plugin.rem.findByName(['Note'], documentRem._id);
+  if (!noteRem) {
+    noteRem = await plugin.rem.createRem();
+    await noteRem?.setText(['Note']);
+  }
+  if (!noteRem) return;
+  await noteRem.setParent(documentRem._id, 0);
+  const children = await noteRem.getChildrenRem();
+  let contentRem: Rem | undefined = children[0];
+  if (!contentRem) {
+    contentRem = await plugin.rem.createRem();
+    await contentRem?.setParent(noteRem._id);
+  }
+  // don't overwrite if the user edited the note in RemNote
+  if (contentRem && (await plugin.richText.empty(contentRem.text || []))) {
+    await contentRem.setText(await convertToRichTextArray(plugin, noteText));
+  }
 };
 
 const findOrCreateTopLevelRem = async (plugin: RNPlugin, str: string) => {
@@ -96,14 +122,6 @@ const findOrCreateDocumentRem = async (
     if (!documentRem) {
       return { success: false, error: `Failed to create the document rem for ${document.title}` };
     }
-    const highlightsRem = await findOrCreateHighlightsParentRem(plugin, documentRem);
-    if (!highlightsRem) {
-      return {
-        success: false,
-        error: `Failed to create the highlights parent rem inside document ${document.title}`,
-      };
-    }
-    await highlightsRem.setParent(documentRem._id);
     if (
       document.title &&
       // don't overwrite if user edited
@@ -136,9 +154,6 @@ const findOrCreateDocumentRem = async (
     }
     if (document.location) {
       documentRem.setPowerupProperty(powerups.document, documentSlots.location, [document.location]);
-    }
-    if (document.notes) {
-      documentRem.setPowerupProperty(powerups.document, documentSlots.note, [document.notes]);
     }
     for (const tag of tagNames(document.tags)) {
       const tagRem = await findOrCreateTopLevelRem(plugin, tag);
@@ -295,8 +310,6 @@ export const importDocumentsAndHighlights = async (
   const allHighlightsById = await findAllHighlights(plugin);
   const enabledOptionalProps = await getEnabledOptionalProperties(plugin);
 
-  const total = documents.reduce((acc, d) => acc + d.highlights.length, 0);
-  let count = 0;
   for (let i = 0; i < documents.length; i++) {
     const { document, highlights } = documents[i];
     const documentRemResult = await findOrCreateDocumentRem(
@@ -315,7 +328,12 @@ export const importDocumentsAndHighlights = async (
         success: false,
         error: 'Could not findOne after create document rem for ' + document.title,
       };
-    } else {
+    }
+    if (document.notes && document.notes.trim()) {
+      await setDocumentNote(plugin, documentRem, document.notes);
+    }
+    if (highlights.length > 0) {
+      await findOrCreateHighlightsParentRem(plugin, documentRem);
       await Promise.all(
         highlights.map(async (highlight) => {
           const highlightResult = await findOrCreateHighlight(
@@ -327,12 +345,11 @@ export const importDocumentsAndHighlights = async (
           if (!highlightResult.success) {
             log(plugin, 'Error creating highlight: ' + highlightResult.error, true);
           }
-          count++;
-          await updateSyncProgressModal((count / total) * 100);
         })
       );
     }
+    await updateSyncProgressModal(((i + 1) / documents.length) * 100);
   }
 
-  return { success: true, data: count };
+  return { success: true, data: documents.length };
 };

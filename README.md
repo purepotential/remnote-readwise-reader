@@ -15,7 +15,7 @@
   - While the initial sync is running, **don't refresh the page or close the tab**.
 - Once the initial sync is done, future syncing will happen **automatically in the background** every 2 minutes.
 
-> **Note:** Only documents that have at least one highlight are synced, together with their highlights.
+> **Note:** A document is synced if it has at least one highlight or a document-level note. Documents with neither are skipped.
 
 ## Settings
 
@@ -23,7 +23,7 @@
 - **Sync locations** - your Library (Inbox + Later + Shortlist) is always synced. Two toggles, off by default, add more on top:
   - **Sync Feed** - also sync documents in your Reader Feed (RSS).
   - **Sync Archive** - also sync archived documents.
-- **Optional document properties** - off by default. Each toggle adds an extra property to synced documents: Source URL, Site Name, Word Count, Reading Progress, Published Date, Saved At. The always-synced set (title, author, image, category, location, summary, tags, note) is unaffected. Enabling a toggle applies on the next sync.
+- **Optional document properties** - off by default. Each toggle adds an extra property to synced documents: Source URL, Site Name, Word Count, Reading Progress, Published Date, Saved At. The always-synced set (title, author, image, category, location, summary, tags, plus the Note and Highlights nodes) is unaffected. Enabling a toggle applies on the next sync.
 
 ## Migrating from the old (v2) Readwise sync
 
@@ -32,4 +32,4 @@ This version syncs from the **Readwise Reader API (v3)** instead of the legacy R
 ## Details
 
 - Reader documents are stored under a Top Level Rem called "Readwise Reader" - **please don't rename, move or delete this document otherwise the plugin won't be able to find where to save your highlights!**
-- Highlights are stored as children of the Reader document they belong to.
+- Each document's highlights are stored under a "Highlights" node, and its document-level note (if any) under a "Note" node, both at the document root.

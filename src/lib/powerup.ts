@@ -1,5 +1,5 @@
 import { RNPlugin } from '@remnote/plugin-sdk';
-import { powerups, documentSlots, highlightSlots } from './consts';
+import { optionalDocumentProperties, powerups, documentSlots, highlightSlots } from './consts';
 
 async function registerDocumentPowerup(plugin: RNPlugin) {
   await plugin.app.registerPowerup({
@@ -37,6 +37,7 @@ async function registerDocumentPowerup(plugin: RNPlugin) {
           code: documentSlots.tags,
           name: 'Tags',
         },
+        ...optionalDocumentProperties.map((p) => ({ code: p.slot, name: p.name })),
       ],
     },
   });

@@ -17,6 +17,11 @@
 
 > **Note:** Only documents that have at least one highlight are synced, together with their highlights.
 
+## Settings
+
+- **Readwise API Key** - required.
+- **Optional document properties** - off by default. Each toggle adds an extra property to synced documents: Source URL, Site Name, Word Count, Reading Progress, Published Date, Saved At. The always-synced set (title, author, image, category, location, summary, tags) is unaffected. Enabling a toggle applies on the next sync.
+
 ## Migrating from the old (v2) Readwise sync
 
 This version syncs from the **Readwise Reader API (v3)** instead of the legacy Readwise highlights export. The two use different document IDs, so highlights synced by the old version won't be matched against the new ones. If you previously used the old sync, delete the old `Readwise Books` document and run `Readwise Sync All` once to get a clean import under `Readwise Reader`.

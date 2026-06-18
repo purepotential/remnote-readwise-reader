@@ -83,13 +83,28 @@ export const getReaderDocumentsSince = async (
   // parent_id === null => top-level document; otherwise a highlight/note child.
   const parentsById = new Map<string, ReaderDocument>();
   const highlights: ReaderDocument[] = [];
+  // A note in Reader is its own `note` document whose `content` holds the note
+  // text and whose `parent_id` points at the highlight (or document) it annotates.
+  const noteContentByParentId = new Map<string, string[]>();
   for (const doc of documents) {
     if (doc.parent_id == null) {
       parentsById.set(doc.id, doc);
     } else if (doc.category === 'highlight') {
       highlights.push(doc);
+    } else if (doc.category === 'note' && doc.content) {
+      const existing = noteContentByParentId.get(doc.parent_id) || [];
+      existing.push(doc.content);
+      noteContentByParentId.set(doc.parent_id, existing);
     }
-    // category === 'note' children are surfaced via each highlight's `notes`.
+  }
+
+  // Attach note text onto the highlight it belongs to. The highlight's own
+  // `notes` field is always empty in Reader; the note lives in a child document.
+  for (const hl of highlights) {
+    const notes = noteContentByParentId.get(hl.id);
+    if (notes && notes.length > 0) {
+      hl.notes = notes.join('\n');
+    }
   }
 
   // On incremental syncs a highlight can come back without its parent (the

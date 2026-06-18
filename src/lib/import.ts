@@ -1,11 +1,49 @@
 import { BuiltInPowerupCodes, Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
-import { documentSlots, highlightSlots, powerups } from './consts';
+import { documentSlots, highlightSlots, optionalDocumentProperties, powerups } from './consts';
 import { log } from './log';
 import { Either } from './types/either';
 import { GroupedDocument, ReaderDocument } from './types/readwise';
 import { addLinkAsSource } from './utils';
 
 const DOCUMENTS_PARENT_NAME = 'Readwise Reader';
+
+type OptionalProperty = (typeof optionalDocumentProperties)[number];
+
+/** The string value to store for an optional property, or undefined to skip. */
+const optionalPropertyValue = (
+  setting: OptionalProperty['setting'],
+  document: ReaderDocument
+): string | undefined => {
+  switch (setting) {
+    case 'sync-source-url':
+      return document.source_url || undefined;
+    case 'sync-site-name':
+      return document.site_name || undefined;
+    case 'sync-word-count':
+      return document.word_count != null ? document.word_count.toString() : undefined;
+    case 'sync-reading-progress':
+      return document.reading_progress != null
+        ? `${Math.round(document.reading_progress * 100)}%`
+        : undefined;
+    case 'sync-published-date':
+      return document.published_date || undefined;
+    case 'sync-saved-at':
+      return document.saved_at || undefined;
+  }
+};
+
+/** Read which optional properties the user has enabled in settings. */
+const getEnabledOptionalProperties = async (
+  plugin: RNPlugin
+): Promise<OptionalProperty[]> => {
+  const enabled: OptionalProperty[] = [];
+  for (const prop of optionalDocumentProperties) {
+    if (await plugin.settings.getSetting<boolean>(prop.setting)) {
+      enabled.push(prop);
+    }
+  }
+  return enabled;
+};
 
 /** Deep link back into the Reader app for a given document/highlight id. */
 const readerLink = (id: string) => `https://read.readwise.io/read/${id}`;
@@ -47,7 +85,8 @@ const findOrCreateDocumentRem = async (
   plugin: RNPlugin,
   document: ReaderDocument,
   documentsParentRem: Rem,
-  allDocumentsById: Record<string, Rem>
+  allDocumentsById: Record<string, Rem>,
+  enabledOptionalProps: OptionalProperty[]
 ): Promise<Either<string, string>> => {
   return await plugin.app.transaction<() => Promise<Either<string, string>>>(async () => {
     let documentRem: Rem | undefined = allDocumentsById[document.id];
@@ -102,6 +141,12 @@ const findOrCreateDocumentRem = async (
       const tagRem = await findOrCreateTopLevelRem(plugin, tag);
       if (tagRem) {
         documentRem.addTag(tagRem);
+      }
+    }
+    for (const prop of enabledOptionalProps) {
+      const value = optionalPropertyValue(prop.setting, document);
+      if (value) {
+        documentRem.setPowerupProperty(powerups.document, prop.slot, [value]);
       }
     }
     await documentRem.setParent(documentsParentRem._id);
@@ -245,6 +290,7 @@ export const importDocumentsAndHighlights = async (
 
   const allDocumentsById = await findAllDocuments(plugin);
   const allHighlightsById = await findAllHighlights(plugin);
+  const enabledOptionalProps = await getEnabledOptionalProperties(plugin);
 
   const total = documents.reduce((acc, d) => acc + d.highlights.length, 0);
   let count = 0;
@@ -254,7 +300,8 @@ export const importDocumentsAndHighlights = async (
       plugin,
       document,
       readerParentRem,
-      allDocumentsById
+      allDocumentsById,
+      enabledOptionalProps
     );
     if (!documentRemResult.success) {
       return documentRemResult;

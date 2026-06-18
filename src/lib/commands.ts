@@ -7,7 +7,7 @@ export async function registerCommands(plugin: RNPlugin) {
     id: 'syncLatestHighlights',
     name: 'Readwise Sync Latest (debug)',
     description:
-      'Sync any unsynced Readwise books and highlights since the last sync time. This command is run automatically for you in the background every 30 minutes.',
+      'Sync any unsynced Readwise Reader documents and highlights since the last sync time. This command is run automatically for you in the background every 2 minutes.',
     action: async () => {
       await syncer.syncLatest(true);
     },
@@ -17,7 +17,7 @@ export async function registerCommands(plugin: RNPlugin) {
     id: 'syncAllHighlights',
     name: 'Readwise Sync All',
     description:
-      'Sync all Readwise books and highlights into RemNote. You should only need to run this command the first time you use the plugin.',
+      'Sync all Readwise Reader documents and highlights into RemNote. You should only need to run this command the first time you use the plugin.',
     action: async () => {
       await syncer.syncAll();
     },

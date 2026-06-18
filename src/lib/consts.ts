@@ -1,6 +1,14 @@
 export const settings = {
   apiKey: 'api-key',
+  syncFeed: 'sync-feed',
+  syncArchive: 'sync-archive',
 };
+
+/**
+ * Document locations synced by default (the Reader "Library": Inbox + reading
+ * list). `feed` and `archive` are added on top via their own boolean settings.
+ */
+export const defaultSyncLocations = ['new', 'later', 'shortlist'] as const;
 
 /**
  * Optional document properties. Each maps to a boolean setting (default off) and
@@ -59,6 +67,7 @@ export const documentSlots = {
   summary: 'readwise-summary',
   location: 'readwise-location',
   tags: 'readwise-tags',
+  note: 'readwise-document-note',
 };
 
 export const highlightSlots = {

@@ -1,5 +1,10 @@
 import { Either } from './types/either';
-import { GroupedDocument, ReaderDocument, ReaderListResponse } from './types/readwise';
+import {
+  GroupedDocument,
+  ReaderDocument,
+  ReaderListResponse,
+  ReaderLocation,
+} from './types/readwise';
 
 type ExportError = 'auth' | string;
 
@@ -74,11 +79,18 @@ const fetchDocumentById = async (
  */
 export const getReaderDocumentsSince = async (
   apiKey: string,
-  updatedAfter?: string
+  updatedAfter?: string,
+  allowedLocations?: ReaderLocation[]
 ): Promise<Either<ExportError, GroupedDocument[]>> => {
   const result = await fetchAllDocuments(apiKey, updatedAfter);
   if (!result.success) return result;
   const documents = result.data;
+
+  // Documents with a location outside the allowed set are skipped (their
+  // highlights go with them). A null location is always kept.
+  const locationFilter = allowedLocations ? new Set<ReaderLocation>(allowedLocations) : null;
+  const isAllowedLocation = (doc: ReaderDocument) =>
+    !locationFilter || doc.location == null || locationFilter.has(doc.location);
 
   // parent_id === null => top-level document; otherwise a highlight/note child.
   const parentsById = new Map<string, ReaderDocument>();
@@ -88,7 +100,7 @@ export const getReaderDocumentsSince = async (
   const noteContentByParentId = new Map<string, string[]>();
   for (const doc of documents) {
     if (doc.parent_id == null) {
-      parentsById.set(doc.id, doc);
+      if (isAllowedLocation(doc)) parentsById.set(doc.id, doc);
     } else if (doc.category === 'highlight') {
       highlights.push(doc);
     } else if (doc.category === 'note' && doc.content) {
@@ -117,7 +129,16 @@ export const getReaderDocumentsSince = async (
   }
   for (const id of missingParentIds) {
     const parent = await fetchDocumentById(apiKey, id);
-    if (parent) parentsById.set(parent.id, parent);
+    if (parent && isAllowedLocation(parent)) parentsById.set(parent.id, parent);
+  }
+
+  // Document-level notes: a `note` document can also point straight at a parent
+  // document. Prefer those over the (rarely populated) document `notes` field.
+  for (const parent of parentsById.values()) {
+    const childNotes = noteContentByParentId.get(parent.id);
+    if (childNotes && childNotes.length > 0) {
+      parent.notes = childNotes.join('\n');
+    }
   }
 
   // Group highlights under their parent, keeping only documents that have any.

@@ -137,6 +137,9 @@ const findOrCreateDocumentRem = async (
     if (document.location) {
       documentRem.setPowerupProperty(powerups.document, documentSlots.location, [document.location]);
     }
+    if (document.notes) {
+      documentRem.setPowerupProperty(powerups.document, documentSlots.note, [document.notes]);
+    }
     for (const tag of tagNames(document.tags)) {
       const tagRem = await findOrCreateTopLevelRem(plugin, tag);
       if (tagRem) {

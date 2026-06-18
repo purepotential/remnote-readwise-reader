@@ -1,8 +1,9 @@
 import { RNPlugin } from '@remnote/plugin-sdk';
-import { settings, storage } from './consts';
+import { defaultSyncLocations, settings, storage } from './consts';
 import { importDocumentsAndHighlights } from './import';
 import { log } from './log';
 import { getReaderDocumentsSince } from './readwise';
+import { ReaderLocation } from './types/readwise';
 
 let syncer: Syncer | undefined = undefined;
 export const getSyncer = (plugin: RNPlugin) => {
@@ -38,6 +39,17 @@ class Syncer {
 
   private getAPIKey = async () => {
     return await this.plugin.settings.getSetting<string>(settings.apiKey);
+  };
+
+  private getAllowedLocations = async (): Promise<ReaderLocation[]> => {
+    const locations: ReaderLocation[] = [...defaultSyncLocations];
+    if (await this.plugin.settings.getSetting<boolean>(settings.syncArchive)) {
+      locations.push('archive');
+    }
+    if (await this.plugin.settings.getSetting<boolean>(settings.syncFeed)) {
+      locations.push('feed');
+    }
+    return locations;
   };
 
   private openSyncProgressModal = async () => {
@@ -137,7 +149,12 @@ class Syncer {
     try {
       this.log('Syncing Readwise Reader highlights...', opts.runImmediately);
       this.isSyncing = true;
-      const result = await getReaderDocumentsSince(apiKey, lastSync?.toISOString());
+      const allowedLocations = await this.getAllowedLocations();
+      const result = await getReaderDocumentsSince(
+        apiKey,
+        lastSync?.toISOString(),
+        allowedLocations
+      );
       if (result.success) {
         const documents = result.data;
         const total = documents.reduce((acc, d) => acc + d.highlights.length, 0);

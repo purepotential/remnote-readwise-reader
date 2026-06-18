@@ -20,7 +20,10 @@
 ## Settings
 
 - **Readwise API Key** - required.
-- **Optional document properties** - off by default. Each toggle adds an extra property to synced documents: Source URL, Site Name, Word Count, Reading Progress, Published Date, Saved At. The always-synced set (title, author, image, category, location, summary, tags) is unaffected. Enabling a toggle applies on the next sync.
+- **Sync locations** - your Library (Inbox + Later + Shortlist) is always synced. Two toggles, off by default, add more on top:
+  - **Sync Feed** - also sync documents in your Reader Feed (RSS).
+  - **Sync Archive** - also sync archived documents.
+- **Optional document properties** - off by default. Each toggle adds an extra property to synced documents: Source URL, Site Name, Word Count, Reading Progress, Published Date, Saved At. The always-synced set (title, author, image, category, location, summary, tags, note) is unaffected. Enabling a toggle applies on the next sync.
 
 ## Migrating from the old (v2) Readwise sync
 

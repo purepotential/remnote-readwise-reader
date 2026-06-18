@@ -12,6 +12,26 @@ const READER_LIST_URL = 'https://readwise.io/api/v3/list/';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The Reader LIST endpoint allows 20 requests/minute. Stay just under that with
+// a sliding window so we don't trip 429s across back-to-back or overlapping syncs.
+const RATE_LIMIT = 18;
+const RATE_WINDOW_MS = 60_000;
+const requestTimestamps: number[] = [];
+
+const rateLimitGate = async (): Promise<void> => {
+  const now = Date.now();
+  while (requestTimestamps.length && now - requestTimestamps[0] > RATE_WINDOW_MS) {
+    requestTimestamps.shift();
+  }
+  if (requestTimestamps.length >= RATE_LIMIT) {
+    const waitMs = RATE_WINDOW_MS - (now - requestTimestamps[0]) + 100;
+    console.log(`Approaching Reader rate limit, pausing ${Math.ceil(waitMs / 1000)}s...`);
+    await sleep(waitMs);
+    return rateLimitGate();
+  }
+  requestTimestamps.push(Date.now());
+};
+
 /**
  * Fetch a single page of the Reader list endpoint, transparently retrying on
  * 429 rate-limit responses using the Retry-After header.
@@ -21,6 +41,7 @@ const fetchListPage = async (
   params: URLSearchParams
 ): Promise<Either<ExportError, ReaderListResponse>> => {
   while (true) {
+    await rateLimitGate();
     console.log('Making Reader list API request with params ' + params.toString());
     const response = await fetch(`${READER_LIST_URL}?${params.toString()}`, {
       method: 'GET',
@@ -120,16 +141,20 @@ export const getReaderDocumentsSince = async (
   }
 
   // On incremental syncs a highlight can come back without its parent (the
-  // parent wasn't itself modified). Fetch any missing parents individually.
-  const missingParentIds = new Set<string>();
-  for (const hl of highlights) {
-    if (hl.parent_id && !parentsById.has(hl.parent_id)) {
-      missingParentIds.add(hl.parent_id);
+  // parent wasn't itself modified) - fetch those parents individually. On a full
+  // sync the whole library is already paged in, so a missing parent means the
+  // document was deleted (an orphan highlight); fetching it just wastes requests.
+  if (updatedAfter) {
+    const missingParentIds = new Set<string>();
+    for (const hl of highlights) {
+      if (hl.parent_id && !parentsById.has(hl.parent_id)) {
+        missingParentIds.add(hl.parent_id);
+      }
     }
-  }
-  for (const id of missingParentIds) {
-    const parent = await fetchDocumentById(apiKey, id);
-    if (parent && isAllowedLocation(parent)) parentsById.set(parent.id, parent);
+    for (const id of missingParentIds) {
+      const parent = await fetchDocumentById(apiKey, id);
+      if (parent && isAllowedLocation(parent)) parentsById.set(parent.id, parent);
+    }
   }
 
   // Document-level notes: a `note` document can also point straight at a parent

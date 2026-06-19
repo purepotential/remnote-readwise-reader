@@ -59,7 +59,10 @@ function ImportError(props: { error: string }) {
       <button
         className="p-2 rounded-md bg-blue-40 text-white"
         onClick={async () => {
-          window.open('https://github.com/purepotential/remnote-readwise/issues/new', '_blank');
+          window.open(
+            'https://github.com/purepotential/remnote-readwise-reader/issues/new',
+            '_blank'
+          );
         }}
       >
         🐛 Report Bug

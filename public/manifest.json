@@ -5,7 +5,7 @@
   "enableOnMobile": true,
   "id": "purepotential-readwise-reader",
   "manifestVersion": 1,
-  "repoUrl": "https://github.com/purepotential/remnote-readwise",
+  "repoUrl": "https://github.com/purepotential/remnote-readwise-reader",
   "version": {
     "major": 0,
     "minor": 0,

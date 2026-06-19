@@ -1,11 +1,11 @@
 {
   "author": "purepotential",
-  "name": "Readwise Reader Sync",
-  "description": "Sync your Readwise Reader highlights with RemNote",
+  "name": "Readwise Reader for RemNote",
+  "description": "Sync your Readwise Reader library into RemNote: documents with their categories and reading locations, highlights, and notes. A community fork of Readwise Sync by Jamesb (bjsi).",
   "enableOnMobile": true,
   "id": "purepotential-readwise-reader",
   "manifestVersion": 1,
-  "repoUrl": "https://github.com/purepotential/remnote-readwise",
+  "repoUrl": "https://github.com/purepotential/remnote-readwise-reader",
   "version": {
     "major": 0,
     "minor": 0,

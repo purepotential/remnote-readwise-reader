@@ -5,7 +5,7 @@ export async function registerCommands(plugin: RNPlugin) {
   const syncer = getSyncer(plugin);
   await plugin.app.registerCommand({
     id: 'syncLatestHighlights',
-    name: 'Readwise Sync Latest (debug)',
+    name: 'Readwise Reader: Sync Latest (debug)',
     description:
       'Sync any unsynced Readwise Reader documents and highlights since the last sync time. This command is run automatically for you in the background every 2 minutes.',
     action: async () => {
@@ -15,7 +15,7 @@ export async function registerCommands(plugin: RNPlugin) {
 
   plugin.app.registerCommand({
     id: 'syncAllHighlights',
-    name: 'Readwise Sync All',
+    name: 'Readwise Reader: Sync All',
     description:
       'Sync all Readwise Reader documents and highlights into RemNote. You should only need to run this command the first time you use the plugin.',
     action: async () => {
